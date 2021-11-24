@@ -1,6 +1,8 @@
 import numpy as np
 from numpy.linalg import LinAlgError
+import scipy.linalg as sl
 import scipy
+import scipy.optimize.linesearch as sol
 from datetime import datetime
 from collections import defaultdict
 
@@ -28,6 +30,7 @@ class LineSearchTool(object):
         If method == 'Constant':
             c : The step size which is returned on every step.
     """
+
     def __init__(self, method='Wolfe', **kwargs):
         self._method = method
         if self._method == 'Wolfe':
@@ -75,8 +78,22 @@ class LineSearchTool(object):
         alpha : float or None if failure
             Chosen step size
         """
-        # TODO: Implement line search procedures for Armijo, Wolfe and Constant steps.
-        return None
+        if self._method == "Constant":
+            return self.c
+
+        if self._method == "Wolfe":
+            phi = lambda alpha: oracle.func_directional(x_k, d_k, alpha)
+            derphi = lambda alpha: oracle.grad_directional(x_k, d_k, alpha)
+            res = sol.scalar_search_wolfe2(phi=phi, derphi=derphi, c1=self.c1, c2=self.c2)
+            if res[0] is not None:
+                return res[0]
+
+        cur_alpha = previous_alpha if previous_alpha is not None else self.alpha_0
+        while oracle.func_directional(x_k, d_k, cur_alpha) > \
+                oracle.func_directional(x_k, d_k, 0) + self.c1 * cur_alpha * oracle.grad_directional(x_k, d_k, 0):
+            cur_alpha /= 2
+
+        return cur_alpha
 
 
 def get_line_search_tool(line_search_options=None):
@@ -142,9 +159,42 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
     line_search_tool = get_line_search_tool(line_search_options)
     x_k = np.copy(x_0)
 
-    # TODO: Implement gradient descent
-    # Use line_search_tool.line_search() for adaptive step size.
-    return x_k, 'success', history
+    iter_cnt = 0
+    gradNorm_0 = np.linalg.norm(oracle.grad(x_0))
+    gradNorm_k = gradNorm_0.copy()
+    message = 'success'
+    norm_satisfied = False
+
+    while iter_cnt < max_iter + 1:
+        start = datetime.now()
+        func_k = oracle.func(x_k)
+        grad_k = oracle.grad(x_k)
+        if trace:
+            history['func'].append(func_k)
+            history['grad_norm'].append(gradNorm_k.copy())
+            if x_k.size <= 2:
+                history['x'].append(x_k.copy())
+
+        step_sz = line_search_tool.line_search(oracle, x_k, -grad_k)
+        x_k -= step_sz * grad_k
+        iter_cnt += 1
+
+        end = datetime.now()
+        if trace:
+            history['time'].append((start - end).seconds)
+
+        if gradNorm_k <= np.sqrt(tolerance) * gradNorm_0:
+            break
+        gradNorm_k = np.linalg.norm(oracle.grad(x_k))
+
+
+    if np.linalg.norm(oracle.grad(x_k)) > np.sqrt(tolerance) * gradNorm_0:
+        message = "iterations_exceeded"
+
+    if display:
+        print(history)
+
+    return x_k, message, history
 
 
 def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
@@ -201,6 +251,44 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
     line_search_tool = get_line_search_tool(line_search_options)
     x_k = np.copy(x_0)
 
-    # TODO: Implement Newton's method.
-    # Use line_search_tool.line_search() for adaptive step size.
-    return x_k, 'success', history
+    start = datetime.now()
+
+    gradNorm_0 = np.linalg.norm(oracle.grad(x_0))
+    gradNorm_k = gradNorm_0.copy()
+    message = 'success'
+
+    for iter_cnt in range(max_iter + 1):
+
+        func_k = oracle.func(x_k)
+        grad_k = oracle.grad(x_k)
+        hess_k = oracle.hess(x_k)
+
+        if trace:
+            history['func'].append(func_k)
+            history['grad_norm'].append(gradNorm_k.copy())
+            end = datetime.now()
+            history['time'].append((start - end).seconds)
+            if x_k.size <= 2:
+                history['x'].append(x_k.copy())
+
+        if gradNorm_k <= np.sqrt(tolerance) * gradNorm_0:
+            break
+
+        try:
+            direction = sl.cho_solve(sl.cho_factor(hess_k), -grad_k)
+        except Exception as e:
+            message = 'computational_error'
+            return x_k, message, history
+
+        step_sz = line_search_tool.line_search(oracle, x_k, direction)
+        x_k += step_sz * direction
+        gradNorm_k = np.linalg.norm(oracle.grad(x_k))
+
+
+    if np.linalg.norm(oracle.grad(x_k)) > np.sqrt(tolerance) * gradNorm_0:
+        message = "iterations_exceeded"
+
+    if display:
+        print(history)
+
+    return x_k, message, history
