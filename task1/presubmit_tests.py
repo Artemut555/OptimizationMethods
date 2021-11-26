@@ -68,6 +68,7 @@ def check_log_reg(oracle_type, sparse=False):
     x = np.zeros(2)
     assert_almost_equal(logreg.func(x), 0.693147180)
     ok_(np.allclose(logreg.grad(x), [0, -0.25]))
+    # print(logreg.hess(x))
     ok_(np.allclose(logreg.hess(x), [[0.625, 0.0625], [0.0625, 0.625]]))
     ok_(isinstance(logreg.grad(x), np.ndarray))
     ok_(isinstance(logreg.hess(x), np.ndarray))
@@ -364,6 +365,7 @@ def check_equal_histories(history1, history2, atol=1e-3):
     if history1 is None or history2 is None:
         eq_(history1, history2)
         return
+
     ok_('func' in history1 and 'func' in history2)
     ok_(np.allclose(history1['func'], history2['func'], atol=atol))
     ok_('grad_norm' in history1 and 'grad_norm' in history2)

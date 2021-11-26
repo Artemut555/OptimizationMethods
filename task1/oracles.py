@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from scipy.sparse.construct import diags
 from scipy.special import expit
 from scipy.sparse import csr_matrix
 
@@ -93,10 +94,15 @@ class LogRegL2Oracle(BaseSmoothOracle):
 
     def hess(self, x):
         sigm = expit(-self.b * self.matvec_Ax(x))
+        # part1 = self.matmat_ATsA(sigm * (1 - sigm)) / len(self.b)
         part1 = self.matmat_ATsA(sigm * (1 - sigm)) / len(self.b)
-        part2 = np.eye(len(x)) * self.regcoef
+        if type(part1) != type(np.array([0])):
+            part1 += diags(np.ones(len(x)) * self.regcoef)
+            return part1.toarray()
 
-        return part1 + part2
+        for i in range(len(x)):
+            part1[i, i] += self.regcoef
+        return part1
 
 
 class LogRegL2OptimizedOracle(LogRegL2Oracle):
@@ -130,7 +136,7 @@ def create_log_reg_oracle(A, b, regcoef, oracle_type='usual'):
         if type(A) == type(s):
             return A.T.dot(np.diag(s)).dot(A)
 
-        return A.transpose().dot(csr_matrix(np.diag(s))).dot(A)
+        return A.transpose().dot(csr_matrix(diags(s))).dot(A)
 
     if oracle_type == 'usual':
         oracle = LogRegL2Oracle

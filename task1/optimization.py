@@ -5,6 +5,7 @@ import scipy
 import scipy.optimize.linesearch as sol
 from datetime import datetime
 from collections import defaultdict
+import scipy.sparse.linalg as ssl
 
 
 class LineSearchTool(object):
@@ -165,8 +166,8 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
     message = 'success'
     norm_satisfied = False
 
+    start = datetime.now()
     while iter_cnt < max_iter + 1:
-        start = datetime.now()
         func_k = oracle.func(x_k)
         grad_k = oracle.grad(x_k)
         if trace:
@@ -181,7 +182,7 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
 
         end = datetime.now()
         if trace:
-            history['time'].append((start - end).seconds)
+            history['time'].append((end - start).total_seconds())
 
         if gradNorm_k <= np.sqrt(tolerance) * gradNorm_0:
             break
@@ -267,13 +268,13 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
             history['func'].append(func_k)
             history['grad_norm'].append(gradNorm_k.copy())
             end = datetime.now()
-            history['time'].append((start - end).seconds)
+            history['time'].append((end - start).total_seconds())
             if x_k.size <= 2:
                 history['x'].append(x_k.copy())
 
         if gradNorm_k <= np.sqrt(tolerance) * gradNorm_0:
             break
-
+        
         try:
             direction = sl.cho_solve(sl.cho_factor(hess_k), -grad_k)
         except Exception as e:
